@@ -19,7 +19,7 @@ typedef struct {
     char* stack;
     size_t size, top;
 }lept_context;
-
+// 返回context栈中的一个写入地址
 static void* lept_context_push(lept_context* c, size_t size) {
     void* ret;
     assert(size > 0);
@@ -89,12 +89,12 @@ static int lept_parse_number(lept_context* c, lept_value* v) {
 static int lept_parse_string(lept_context* c, lept_value* v) {
     size_t head = c->top, len;
     const char* p;
-    EXPECT(c, '\"');
+    EXPECT(c, '\"'); // 第一个字符是"
     p = c->json;
     for (;;) {
         char ch = *p++;
         switch (ch) {
-            case '\"':
+            case '\"': // 最后一个字符是"
                 len = c->top - head;
                 lept_set_string(v, (const char*)lept_context_pop(c, len), len);
                 c->json = p;
@@ -102,7 +102,26 @@ static int lept_parse_string(lept_context* c, lept_value* v) {
             case '\0':
                 c->top = head;
                 return LEPT_PARSE_MISS_QUOTATION_MARK;
+            case '\\':
+                switch (*p++) {
+                    case '\"': PUTC(c, '\"'); break;
+                    case '\\': PUTC(c, '\\'); break;
+                    case '/':  PUTC(c, '/' ); break;
+                    case 'b':  PUTC(c, '\b'); break;
+                    case 'f':  PUTC(c, '\f'); break;
+                    case 'n':  PUTC(c, '\n'); break;
+                    case 'r':  PUTC(c, '\r'); break;
+                    case 't':  PUTC(c, '\t'); break;
+                    default:
+                    c->top = head;
+                    return LEPT_PARSE_INVALID_STRING_ESCAPE;
+                }
+                break;
             default:
+                if ((unsigned char)ch < 0x20) {
+                    c->top = head;
+                    return LEPT_PARSE_INVALID_STRING_CHAR;
+                }
                 PUTC(c, ch);
         }
     }
@@ -153,12 +172,13 @@ lept_type lept_get_type(const lept_value* v) {
 }
 
 int lept_get_boolean(const lept_value* v) {
-    /* \TODO */
-    return 0;
+    assert(v != NULL && (v->type == LEPT_TRUE || v->type == LEPT_FALSE));
+    return v->type == LEPT_TRUE;
 }
 
 void lept_set_boolean(lept_value* v, int b) {
-    /* \TODO */
+    lept_free(v);
+    v->type = b ? LEPT_TRUE : LEPT_FALSE;
 }
 
 double lept_get_number(const lept_value* v) {
@@ -167,7 +187,9 @@ double lept_get_number(const lept_value* v) {
 }
 
 void lept_set_number(lept_value* v, double n) {
-    /* \TODO */
+    lept_free(v);
+    v->u.n = n;
+    v->type = LEPT_NUMBER;
 }
 
 const char* lept_get_string(const lept_value* v) {
